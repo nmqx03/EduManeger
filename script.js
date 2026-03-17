@@ -83,6 +83,73 @@ function NavCard({ label, sub, icon, onClick, onEdit, onDelete }) {
   );
 }
 
+// ─── DRAGGABLE NAV GRID ───
+function DraggableNavGrid({ items, onReorder, renderItem }) {
+  const [dragIdx, setDragIdx] = useState(null);
+  const [overIdx, setOverIdx] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragStart = (e, idx) => {
+    setDragIdx(idx);
+    setIsDragging(true);
+    e.dataTransfer.effectAllowed = "move";
+    // Ghost image trong suốt
+    const ghost = document.createElement("div");
+    ghost.style.cssText = "position:fixed;top:-999px;opacity:0;";
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, 0, 0);
+    setTimeout(() => document.body.removeChild(ghost), 0);
+  };
+
+  const handleDragOver = (e, idx) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (idx !== overIdx) setOverIdx(idx);
+  };
+
+  const handleDrop = (e, idx) => {
+    e.preventDefault();
+    if (dragIdx === null || dragIdx === idx) { reset(); return; }
+    const next = [...items];
+    const [moved] = next.splice(dragIdx, 1);
+    next.splice(idx, 0, moved);
+    onReorder(next);
+    reset();
+  };
+
+  const reset = () => { setDragIdx(null); setOverIdx(null); setIsDragging(false); };
+
+  return (
+    <div className="nav-grid" style={{userSelect:'none'}}>
+      {items.map((item, idx) => {
+        const isDragged = dragIdx === idx;
+        const isOver = overIdx === idx && dragIdx !== idx;
+        return (
+          <div
+            key={item.id}
+            draggable
+            onDragStart={e => handleDragStart(e, idx)}
+            onDragOver={e => handleDragOver(e, idx)}
+            onDrop={e => handleDrop(e, idx)}
+            onDragEnd={reset}
+            style={{
+              opacity: isDragged ? 0.35 : 1,
+              transform: isOver ? 'scale(1.03)' : 'none',
+              transition: 'transform 0.15s, opacity 0.15s, box-shadow 0.15s',
+              boxShadow: isOver ? '0 8px 30px rgba(255,119,160,0.25)' : 'none',
+              borderRadius: 16,
+              outline: isOver ? '2px dashed #ff77a0' : 'none',
+              cursor: isDragging ? 'grabbing' : 'grab',
+            }}
+          >
+            {renderItem(item, idx)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function CopyIcon({ state }) {
   if (state === "copied") return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -807,13 +874,15 @@ function AttendancePage({ classes, setClasses }) {
         <div className="page-topbar">
           <div className="page-topbar-title">Chọn Lớp Để Điểm Danh</div>
         </div>
-        <div className="nav-grid">
-          {classes.length === 0 ? <div className="empty-state"><div className="empty-state-icon">🏫</div><div>Chưa có lớp nào</div></div> : null}
-          {classes.map(c => (
-            <NavCard key={c.id} label={c.name} sub={`${(c.students || []).length} học sinh`} 
+        {classes.length === 0 ? <div className="empty-state"><div className="empty-state-icon">🏫</div><div>Chưa có lớp nào</div></div> : null}
+        <DraggableNavGrid
+          items={classes}
+          onReorder={next => { setClasses(next); saveClasses(next); }}
+          renderItem={(c) => (
+            <NavCard label={c.name} sub={`${(c.students || []).length} học sinh`}
               icon={<Icon name="school" />} onClick={() => { setSelClassId(c.id); setStep(1); }} />
-          ))}
-        </div>
+          )}
+        />
       </div>
     );
   }
@@ -923,7 +992,7 @@ function AttendancePage({ classes, setClasses }) {
                 <tr>
                   <th className="center">STT</th>
                   <th>HỌ VÀ TÊN</th>
-                  <th className="center">TRẠNG THÁI</th>
+                  <th>TRẠNG THÁI</th>
                   <th className="center">CHÍNH / THÁNG</th>
                   <th className="center">KÈM / THÁNG</th>
                   <th className="center">TỔNG / THÁNG</th>
@@ -938,7 +1007,7 @@ function AttendancePage({ classes, setClasses }) {
                     <tr key={s.id} className="student-row" style={{cursor: 'default'}}>
                       <td className="center stt-cell">{i + 1}</td>
                       <td className="name-cell">{s.name}</td>
-                      <td className="center" onClick={e => e.stopPropagation()}>
+                      <td onClick={e => e.stopPropagation()}>
                         <div className="att-toggle-group">
                           <button className={`att-toggle-btn ${!isMain && !isKem ? "active absent" : ""}`}
                             onClick={() => {
@@ -1571,18 +1640,19 @@ function StudentPage({ classes, setClasses }) {
           <div className="page-topbar-title">Danh Sách Học Sinh - Chọn Lớp</div>
           <button className="btn-add-primary" onClick={() => setShowAddClass(true)}>+ Thêm lớp</button>
         </div>
-        <div className="nav-grid">
-          {classes.length === 0 ? <div className="empty-state"><div className="empty-state-icon">🏫</div><div>Chưa có lớp nào</div></div> : null}
-          {classes.map(c => (
-            <div key={c.id} style={{position:'relative'}}>
-              <NavCard 
-                  label={c.name} 
-                  sub={`${(c.students || []).length} học sinh`} 
-                  icon={<Icon name="school" />} 
-                  onClick={() => { setSelClassId(c.id); setStep(1); }} 
-                  onEdit={() => setClassMenuId(classMenuId === c.id ? null : c.id)}
+        {classes.length === 0 ? <div className="empty-state"><div className="empty-state-icon">🏫</div><div>Chưa có lớp nào</div></div> : null}
+        <DraggableNavGrid
+          items={classes}
+          onReorder={next => { setClasses(next); saveClasses(next); }}
+          renderItem={(c) => (
+            <div style={{position:'relative'}}>
+              <NavCard
+                label={c.name}
+                sub={`${(c.students || []).length} học sinh`}
+                icon={<Icon name="school" />}
+                onClick={() => { setSelClassId(c.id); setStep(1); }}
+                onEdit={() => setClassMenuId(classMenuId === c.id ? null : c.id)}
               />
-              {/* Dropdown menu */}
               {classMenuId === c.id && (
                 <div ref={classMenuRef} style={{
                   position:'absolute', top:'100%', right:8, zIndex:50, marginTop:4,
@@ -1616,8 +1686,8 @@ function StudentPage({ classes, setClasses }) {
                 </div>
               )}
             </div>
-          ))}
-        </div>
+          )}
+        />
         {showAddClass && (
           <div className="modal-overlay" onClick={() => setShowAddClass(false)}>
             <div className="modal-dialog" onClick={e => e.stopPropagation()}>
