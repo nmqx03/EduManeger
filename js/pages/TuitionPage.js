@@ -54,7 +54,8 @@ function TuitionPage({ classes, user }) {
     if (!selClassId || !selYear || !selMonth) return;
     setPaidStudents({});
     if (user) {
-      loadPaidFromDB(user.uid, selClassId, selYear, selMonth).then(data => {
+      loadPaidFromDB(user.uid, String(selClassId), String(selYear), String(selMonth)).then(data => {
+        console.log("[Paid] Loaded from Firestore:", data);
         setPaidStudents(data && Object.keys(data).length > 0 ? data : loadPaid(selClassId, selYear, selMonth));
       });
     } else {
@@ -109,9 +110,14 @@ function TuitionPage({ classes, user }) {
   const togglePaid = (id) => {
     setPaidStudents(prev => {
       const next = { ...prev, [id]: !prev[id] };
-      // Lưu trực tiếp khi toggle — tránh race condition với useEffect
-      if (user) savePaidToDB(user.uid, selClassId, selYear, selMonth, next);
-      else savePaid(selClassId, selYear, selMonth, next);
+      if (user) {
+        console.log("[Paid] Saving to Firestore:", user.uid, selClassId, selYear, selMonth, next);
+        savePaidToDB(user.uid, String(selClassId), String(selYear), String(selMonth), next)
+          .then(() => console.log("[Paid] Saved OK"))
+          .catch(e => console.error("[Paid] Save error:", e));
+      } else {
+        savePaid(selClassId, selYear, selMonth, next);
+      }
       return next;
     });
   };

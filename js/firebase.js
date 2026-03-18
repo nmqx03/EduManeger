@@ -55,9 +55,15 @@ async function loadPaidFromDB(uid, classId, year, month) {
 async function savePaidToDB(uid, classId, year, month, map) {
   try {
     const docId = `${classId}_${year}_${month}`;
-    await userCol(uid, "paid").doc(docId).set(map);
+    // Chỉ lưu các id có giá trị true — Firestore không xử lý tốt boolean false
+    const cleanMap = {};
+    Object.entries(map).forEach(([k, v]) => { if (v === true) cleanMap[k] = true; });
+    await userCol(uid, "paid").doc(docId).set(cleanMap);
     savePaid(classId, year, month, map);
-  } catch(e) { savePaid(classId, year, month, map); }
+  } catch(e) {
+    console.warn("savePaidToDB error:", e);
+    savePaid(classId, year, month, map);
+  }
 }
 
 async function loadProfileFromDB(uid) {
