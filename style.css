@@ -235,27 +235,23 @@ body {
 .modal-actions { padding: 14px 24px; display: flex; gap: 10px; justify-content: flex-end; background: #f5f9ff; border-top: 1px solid #bfdbfe; }
 .btn-dark { background: #4f7fff; color: #fff; padding: 9px 18px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;}
 
+/* ─── RECEIPT PREVIEW SCALE ─── */
 .receipt-preview-container {
-    background: #f5f9ff;
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    position: relative;
-    padding: 16px;
-    display: flex;
-    justify-content: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #f5f9ff;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
 }
-/* Scale động qua JS — transform-origin top left để không bị lệch */
 .receipt-scale-wrapper {
-    transform: scale(0.45);
-    transform-origin: top left;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-    height: 900px;
-    flex-shrink: 0;
+  display: block;
+  transform-origin: top center;
 }
 
 /* ─── RECEIPT PRINT CSS ─── */
-.receipt { width: 1080px; min-height: 1920px; background: #fff; color: #1a1a1a; padding: 60px 80px; display: flex; flex-direction: column; font-family: 'Inter', sans-serif; }
+.receipt { width: 1080px; background: #fff; color: #1a1a1a; padding: 60px 80px; display: flex; flex-direction: column; font-family: 'Inter', sans-serif; }
 .receipt-header { text-align: center; margin-bottom: 50px; padding-bottom: 40px; border-bottom: 6px solid #4f7fff; }
 .receipt-logo { max-width: 500px; margin: 0 auto 16px; display: block; }
 .receipt-addr { font-size: 28px; color: #718096; }

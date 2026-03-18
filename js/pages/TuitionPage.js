@@ -387,16 +387,21 @@ function TuitionPage({ classes, user }) {
                     <h3>Phiếu – {selected.name}</h3>
                     <button className="modal-close" onClick={() => setPreview(false)}>×</button>
                 </div>
-                {/* Scaled Preview Section — scale động theo width container */}
+                {/* Scaled Preview */}
                 <div className="receipt-preview-container" ref={el => {
                   if (!el) return;
-                  const containerW = el.clientWidth - 32; // trừ padding
-                  const scale = Math.min(containerW / 1080, 0.5);
+                  const scale = el.clientWidth / 1080;
                   const wrapper = el.querySelector('.receipt-scale-wrapper');
-                  if (wrapper) {
-                    wrapper.style.transform = `scale(${scale})`;
-                    wrapper.style.height = Math.round(1920 * scale) + 'px';
-                  }
+                  if (!wrapper) return;
+                  wrapper.style.transform = `scale(${scale})`;
+                  wrapper.style.transformOrigin = 'top left';
+                  wrapper.style.width = '1080px';
+                  requestAnimationFrame(() => {
+                    const receiptEl = wrapper.querySelector('.receipt');
+                    const h = receiptEl ? receiptEl.offsetHeight : 1920;
+                    // Set height wrapper = chiều cao thực sau scale để scroll đúng
+                    wrapper.style.height = Math.ceil(h * scale) + 'px';
+                  });
                 }}>
                     <div className="receipt-scale-wrapper">
                         <ReceiptMarkup 

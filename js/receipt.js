@@ -92,7 +92,7 @@ function ReceiptMarkup({ student, bankInfo, qrCodeUrl, id, context, profile: pro
             )}
             
             <div className="receipt-total-row">
-              <div className="receipt-total-label">TỔNG HỌC PHÍ</div>
+              <div className="receipt-total-label">TỔNG HỌC PHÍ:</div>
               <div className="receipt-total-value">{fmt(student.fee)} VND</div>
             </div>
         </div>
@@ -123,24 +123,29 @@ function ReceiptMarkup({ student, bankInfo, qrCodeUrl, id, context, profile: pro
 function renderReceiptToCanvas(student, bankInfo, qrCodeUrl, context, profile) {
   return new Promise((resolve, reject) => {
     const wrap = document.createElement("div");
-    wrap.style.cssText = "position:fixed;left:-9999px;top:0;width:1080px;pointer-events:none;z-index:-1;";
+    // Dùng position:absolute thay fixed để tránh html2canvas tính sai offset khi trang đang scroll
+    wrap.style.cssText = "position:absolute;left:-9999px;top:0;width:1080px;pointer-events:none;z-index:-1;visibility:hidden;";
     document.body.appendChild(wrap);
     
     const tmpRoot = ReactDOM.createRoot(wrap);
     tmpRoot.render(React.createElement(ReceiptMarkup, { student, bankInfo, qrCodeUrl, context, profile }));
 
-    // 3. Chờ DOM cập nhật
     const capture = () => {
       const el = wrap.querySelector(".receipt");
       if (!el) { cleanup(); reject(new Error("Receipt not found")); return; }
       
-      // html2canvas config tối ưu hơn chút
       window.html2canvas(el, { 
-          scale: 2, // Giữ nguyên chất lượng 2x
+          scale: 2,
           useCORS: true, 
           allowTaint: true, 
           backgroundColor: "#fff", 
-          logging: false // Tắt log để nhanh hơn chút
+          logging: false,
+          // Quan trọng: truyền scroll offset để html2canvas không bị lệch
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: 1080,
+          x: 0,
+          y: 0,
       })
         .then(canvas => { cleanup(); resolve(canvas); })
         .catch(err  => { cleanup(); reject(err); });
@@ -148,7 +153,6 @@ function renderReceiptToCanvas(student, bankInfo, qrCodeUrl, context, profile) {
 
     const cleanup = () => { tmpRoot.unmount(); document.body.removeChild(wrap); };
     
-    // Đợi 1 tick để React render xong, sau đó đợi thêm chút để ảnh load (nếu cần)
-    setTimeout(() => { requestAnimationFrame(() => setTimeout(capture, 100)); }, 200);
+    setTimeout(() => { requestAnimationFrame(() => setTimeout(capture, 150)); }, 200);
   });
 }
