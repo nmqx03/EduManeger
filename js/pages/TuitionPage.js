@@ -49,22 +49,18 @@ function TuitionPage({ classes, user }) {
 
   const activeClass = useMemo(() => classes.find(c => c.id === selClassId), [classes, selClassId]);
 
-  // Load/Save Paid Status — Firestore per user
+  // Load Paid Status — Firestore là nguồn chính, localStorage fallback khi offline
   useEffect(() => {
-    if (selClassId && selYear && selMonth) {
-      setPaidStudents(loadPaid(selClassId, selYear, selMonth));
-      if (user) loadPaidFromDB(user.uid, selClassId, selYear, selMonth).then(data => {
-        if (data && Object.keys(data).length > 0) setPaidStudents(data);
+    if (!selClassId || !selYear || !selMonth) return;
+    setPaidStudents({});
+    if (user) {
+      loadPaidFromDB(user.uid, selClassId, selYear, selMonth).then(data => {
+        setPaidStudents(data && Object.keys(data).length > 0 ? data : loadPaid(selClassId, selYear, selMonth));
       });
+    } else {
+      setPaidStudents(loadPaid(selClassId, selYear, selMonth));
     }
   }, [selClassId, selYear, selMonth]);
-
-  useEffect(() => {
-    if (selClassId && selYear && selMonth) {
-      if (user) savePaidToDB(user.uid, selClassId, selYear, selMonth, paidStudents);
-      else savePaid(selClassId, selYear, selMonth, paidStudents);
-    }
-  }, [paidStudents]);
 
   // Calculations
   const students = useMemo(() => {
@@ -111,7 +107,13 @@ function TuitionPage({ classes, user }) {
   const uncollectedFee = unpaidList.reduce((a, s) => a + s.fee, 0);
 
   const togglePaid = (id) => {
-    setPaidStudents(prev => ({ ...prev, [id]: !prev[id] }));
+    setPaidStudents(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      // Lưu trực tiếp khi toggle — tránh race condition với useEffect
+      if (user) savePaidToDB(user.uid, selClassId, selYear, selMonth, next);
+      else savePaid(selClassId, selYear, selMonth, next);
+      return next;
+    });
   };
 
   const copyOneRow = (e, student) => {

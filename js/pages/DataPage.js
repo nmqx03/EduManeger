@@ -2,7 +2,7 @@
 // DATA MANAGEMENT PAGE (IMPORT/EXPORT)
 // ─────────────────────────────────────────────────────────────────
 
-function DataPage({ classes, setClasses }) {
+function DataPage({ classes, setClasses, user }) {
     const [tab, setTab] = useState("export"); // 'export' | 'import'
     
     // Export State
@@ -88,7 +88,7 @@ function DataPage({ classes, setClasses }) {
         attendanceMonth: (new Date().getMonth() + 1).toString(),
     });
 
-    const handleExport = () => {
+    const handleExport = async () => {
         if (!exportClassId) { alert("Vui lòng chọn lớp!"); return; }
         const cls = classes.find(c => c.id === exportClassId);
         if (!cls) return;
@@ -111,7 +111,7 @@ function DataPage({ classes, setClasses }) {
         });
 
         // Load Paid Data
-        const paidData = loadPaid(cls.id, exportYear, exportMonth);
+        const paidData = user ? await loadPaidFromDB(user.uid, cls.id, exportYear, exportMonth) : loadPaid(cls.id, exportYear, exportMonth);
 
         // Pre-calculate totals for summary rows
         const studentStats = (cls.students || []).map(s => {
@@ -470,7 +470,7 @@ function DataPage({ classes, setClasses }) {
         setWb(null);
     };
 
-        const handleExportPDF = () => {
+        const handleExportPDF = async () => {
         if (!exportClassId) { alert("Vui lòng chọn lớp!"); return; }
         if (!window.jspdf) { alert("Thư viện jsPDF chưa tải xong!"); return; }
         if (!window.html2canvas) { alert("Thư viện html2canvas chưa tải xong!"); return; }
@@ -484,7 +484,7 @@ function DataPage({ classes, setClasses }) {
         }).sort((a,b) => a.date.localeCompare(b.date));
         const sessionMap = {};
         monthlySessions.forEach(ses => { sessionMap[new Date(ses.date).getDate()] = ses; });
-        const paidData = loadPaid(cls.id, exportYear, exportMonth);
+        const paidData = user ? await loadPaidFromDB(user.uid, cls.id, exportYear, exportMonth) : loadPaid(cls.id, exportYear, exportMonth);
         const activeDays = [];
         for (let d=1;d<=31;d++) { if (sessionMap[d]) activeDays.push(d); }
         const studentStats = (cls.students||[]).map(s => {

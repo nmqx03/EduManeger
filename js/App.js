@@ -153,7 +153,7 @@ function App() {
         {page === "attendance" && <AttendancePage classes={classes} setClasses={setClassesAndSave} navigate={navigate} hashParts={parts} user={user} passcodeUnlocked={passcodeUnlocked} setPasscodeUnlocked={setPasscodeUnlocked} />}
         {page === "tuition"    && <TuitionPage classes={classes} user={user} navigate={navigate} hashParts={parts} />}
         {page === "students"   && <StudentPage classes={classes} setClasses={setClassesAndSave} user={user} passcodeUnlocked={passcodeUnlocked} setPasscodeUnlocked={setPasscodeUnlocked} />}
-        {page === "data"       && <DataPage classes={classes} setClasses={setClassesAndSave} />}
+        {page === "data"       && <DataPage classes={classes} setClasses={setClassesAndSave} user={user} />}
         {page === "timetable"  && <TimetablePage classes={classes} user={user} />}
         {page === "profile"    && <ProfilePage user={user} passcodeUnlocked={passcodeUnlocked} setPasscodeUnlocked={setPasscodeUnlocked} />}
       </main>
