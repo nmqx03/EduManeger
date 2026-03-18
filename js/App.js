@@ -2,6 +2,102 @@
 // APP
 // ─────────────────────────────────────────────────────────────────
 
+// ─── ADMIN HEADER MENU ───
+function AdminHeaderMenu({ user, handleLogout }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  const avatar = (user.email || "A")[0].toUpperCase();
+  return (
+    <div className="header-user-wrap" ref={ref}>
+      <button className="header-avatar-btn" onClick={() => setOpen(o => !o)} title="Tài khoản">
+        <span className="header-user-avatar">{avatar}</span>
+      </button>
+      {open && (
+        <div className="header-dropdown">
+          <div className="header-dropdown-user">
+            <div className="header-dropdown-avatar">{avatar}</div>
+            <div className="header-dropdown-info">
+              <div className="header-dropdown-name">Super Admin</div>
+              <div className="header-dropdown-email">{user.email}</div>
+            </div>
+          </div>
+          <div className="header-dropdown-divider"/>
+          <button className="header-dropdown-item danger" onClick={() => { setOpen(false); handleLogout(); }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+            Đăng xuất
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── HEADER USER DROPDOWN MENU ───
+function HeaderUserMenu({ user, page, navigate, handleLogout }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const displayName = user.displayName || user.email || "?";
+  const avatar = displayName[0].toUpperCase();
+
+  return (
+    <div className="header-right">
+      <div className="header-user-wrap" ref={ref}>
+        <button className="header-avatar-btn" onClick={() => setOpen(o => !o)} title="Tài khoản">
+          <span className="header-user-avatar">{avatar}</span>
+        </button>
+        {open && (
+          <div className="header-dropdown">
+            <div className="header-dropdown-user">
+              <div className="header-dropdown-avatar">{avatar}</div>
+              <div className="header-dropdown-info">
+                <div className="header-dropdown-name">{user.displayName || "Người dùng"}</div>
+                <div className="header-dropdown-email">{user.email}</div>
+              </div>
+            </div>
+            <div className="header-dropdown-divider"/>
+            <button className="header-dropdown-item" onClick={() => { setOpen(false); navigate("#/profile"); }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              Hồ Sơ của tôi
+            </button>
+            <button className="header-dropdown-item" onClick={() => { setOpen(false); navigate("#/data"); }}>
+              <Icon name="database" size={15}/> Quản lý dữ liệu
+            </button>
+            <div className="header-dropdown-divider"/>
+            <button className="header-dropdown-item danger" onClick={() => { setOpen(false); handleLogout(); }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+              Đăng xuất
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -92,19 +188,13 @@ function App() {
       <main className="main-content">
         <div className="header-bar">
           <div className="header-left">
-            <span className="header-title">🔐 Quản Lý Tài Khoản</span>
-          </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <div style={{fontSize:12,color:"rgba(255,255,255,0.85)",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-              {user.email}
+            <div className="header-logo-btn" style={{cursor:'default'}}>
+              <img src="images/favicon-96x96.png" alt="Logo" className="header-logo-img" />
             </div>
-            <button className="header-home-btn" title="Đăng xuất" onClick={handleLogout}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                <polyline points="16 17 21 12 16 7"/>
-                <line x1="21" y1="12" x2="9" y2="12"/>
-              </svg>
-            </button>
+            <span className="header-title">Quản Lý Tài Khoản</span>
+          </div>
+          <div className="header-user-wrap" style={{position:'relative'}}>
+            <AdminHeaderMenu user={user} handleLogout={handleLogout} />
           </div>
         </div>
         <AdminPage user={user} />
@@ -113,7 +203,7 @@ function App() {
   );
 
   const titles = {
-    home:"Trang Chủ", attendance:"Điểm Danh", tuition:"Học Phí",
+    home:"", attendance:"Điểm Danh", tuition:"Học Phí",
     students:"Học Sinh", data:"Dữ Liệu", timetable:"Thời Khóa Biểu",
     profile:"Hồ Sơ"
   };
@@ -123,30 +213,12 @@ function App() {
       <main className="main-content">
         <div className="header-bar">
           <div className="header-left">
-            <button className="header-home-btn" onClick={() => navigate("#/")} title="Trang chủ">
-              <Icon name="home" size={20} />
+            <button className="header-home-btn header-logo-btn" onClick={() => navigate("#/")} title="Trang chủ">
+              <img src="images/favicon-96x96.png" alt="Trang chủ" className="header-logo-img" />
             </button>
             <span className="header-title">{titles[page] || "EduManagement"}</span>
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <button className="header-home-btn" style={{width:"auto",padding:"0 12px",fontSize:13,gap:6,fontWeight:500}} onClick={() => navigate("#/profile")}>
-              👤 Hồ Sơ
-            </button>
-            <button className="header-home-btn" style={{width:"auto",padding:"0 12px",fontSize:13,gap:6,fontWeight:500}} onClick={() => navigate("#/data")}>
-              <Icon name="database" size={18}/> Dữ Liệu
-            </button>
-            <div style={{width:1,height:20,background:"rgba(255,255,255,0.3)"}}/>
-            <div style={{fontSize:12,color:"rgba(255,255,255,0.85)",maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-              {user.displayName || user.email}
-            </div>
-            <button className="header-home-btn" title="Đăng xuất" onClick={handleLogout}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                <polyline points="16 17 21 12 16 7"/>
-                <line x1="21" y1="12" x2="9" y2="12"/>
-              </svg>
-            </button>
-          </div>
+          <HeaderUserMenu user={user} page={page} navigate={navigate} handleLogout={handleLogout} />
         </div>
 
         {page === "home"       && <HomePage onNavigate={p => navigate(`#/${p}`)} />}

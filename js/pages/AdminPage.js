@@ -14,116 +14,170 @@ function AdminPage({ user }) {
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
 
-  // Xác thực mật khẩu admin để xem password user
-  const [revealId, setRevealId] = useState(null);
-  const [adminPwdInput, setAdminPwdInput] = useState("");
-  const [adminPwdError, setAdminPwdError] = useState("");
-  const [adminPwdVerifying, setAdminPwdVerifying] = useState(false);
-  const [revealedIds, setRevealedIds] = useState({}); // {email: true} đã unlock
-  const [adminVerified, setAdminVerified] = useState(false); // đã xác minh trong session
+  // Reveal password
+  const [revealedIds, setRevealedIds] = useState({});
+  const [adminVerified, setAdminVerified] = useState(false);
 
-  const isAdmin = user && user.email && user.email.toLowerCase() === SUPER_ADMIN;
+  // Auth gate modal — dùng cho xem pwd / sửa / xóa
+  const [authGate, setAuthGate] = useState(null); // { title, onVerified }
+  const [authPwd, setAuthPwd] = useState("");
+  const [authErr, setAuthErr] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Edit modal
+  const [editingAcc, setEditingAcc] = useState(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editPwd, setEditPwd] = useState("");
+  const [showEditPwd, setShowEditPwd] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editErr, setEditErr] = useState("");
+
   const ACCOUNTS_PER_PAGE = 20;
   const [accPage, setAccPage] = useState(1);
+
+  const isAdmin = user && user.email && user.email.toLowerCase() === SUPER_ADMIN;
 
   useEffect(() => {
     if (!isAdmin) return;
     loadAllowedEmails().then(list => { setAccounts(list); setLoading(false); });
   }, []);
 
+  // ── Xác thực admin password ──
+  const requireAuth = (title, onVerified) => {
+    if (adminVerified) { onVerified(); return; }
+    setAuthGate({ title, onVerified });
+    setAuthPwd(""); setAuthErr("");
+  };
+
+  const handleAuthSubmit = async () => {
+    if (!authPwd) { setAuthErr("Vui lòng nhập mật khẩu"); return; }
+    setAuthLoading(true); setAuthErr("");
+    try {
+      const credential = firebase.auth.EmailAuthProvider.credential(user.email, authPwd);
+      await window.auth.currentUser.reauthenticateWithCredential(credential);
+      setAdminVerified(true);
+      const cb = authGate.onVerified;
+      setAuthGate(null); setAuthPwd("");
+      cb();
+    } catch {
+      setAuthErr("Mật khẩu không đúng");
+    }
+    setAuthLoading(false);
+  };
+
+  // ── Thêm tài khoản ──
   const handleAdd = async () => {
     const em = newEmail.trim().toLowerCase();
     const pw = newPassword.trim();
     if (!em || !pw) { setFormError("Vui lòng nhập đầy đủ email và mật khẩu"); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { setFormError("Email không hợp lệ"); return; }
     if (pw.length < 6) { setFormError("Mật khẩu phải có ít nhất 6 ký tự"); return; }
-    if (accounts.find(a => a.email === em)) { setFormError("Email này đã tồn tại trong danh sách"); return; }
-
+    if (accounts.find(a => a.email === em)) { setFormError("Email này đã tồn tại"); return; }
     setAdding(true); setFormError(""); setFormSuccess("");
     try {
       const result = await adminCreateUser(em, pw);
-      const uid = result.localId;
-      const idToken = result.idToken;
-      await addUserAccount(em, pw, user.email, uid, idToken);
-      const newAcc = { email: em, pwd: obfuscate(pw), uid, addedBy: user.email, addedAt: new Date().toISOString() };
-      setAccounts(prev => [...prev, newAcc]);
+      await addUserAccount(em, pw, user.email, result.localId, result.idToken);
+      setAccounts(prev => [...prev, { email: em, pwd: obfuscate(pw), uid: result.localId, addedBy: user.email, addedAt: new Date().toISOString() }]);
       setNewEmail(""); setNewPassword("");
       setFormSuccess(`✅ Đã tạo tài khoản ${em}`);
       setTimeout(() => setFormSuccess(""), 4000);
     } catch(e) {
-      const msgs = {
-        "EMAIL_EXISTS": "Email này đã có tài khoản Firebase — hãy dùng email khác",
-        "INVALID_EMAIL": "Email không hợp lệ",
-      };
+      const msgs = { "EMAIL_EXISTS": "Email đã có tài khoản Firebase", "INVALID_EMAIL": "Email không hợp lệ" };
       setFormError(msgs[e.message] || "Lỗi: " + e.message);
     }
     setAdding(false);
   };
 
-  const handleRemove = async (acc) => {
+  // ── Xóa tài khoản (yêu cầu xác thực) ──
+  const handleRemove = (acc) => {
     if (acc.email === SUPER_ADMIN) { alert("Không thể xóa tài khoản admin chính!"); return; }
-    if (!confirm(`Xóa hoàn toàn tài khoản ${acc.email}?\nTài khoản sẽ bị xóa khỏi Firebase.`)) return;
-
-    try {
-      // Xóa khỏi allowedEmails (Firestore)
-      await removeAllowedEmail(acc.email);
-
-      // Nếu có uid → dùng Firebase Admin REST để xóa Auth user
-      // Cách: đăng nhập lại bằng email/pwd để lấy idToken mới rồi xóa
-      if (acc.uid && acc.pwd) {
-        try {
-          const apiKey = "AIzaSyApsLv_N7Je30jz6CRxKX8PmsHyEY5Z4h0";
-          // Sign in để lấy fresh idToken
-          const signInRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: acc.email, password: deobfuscate(acc.pwd), returnSecureToken: true })
-          });
-          const signInData = await signInRes.json();
-          if (signInData.idToken) {
-            // Xóa user bằng idToken của chính user đó
-            await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${apiKey}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ idToken: signInData.idToken })
+    requireAuth(`Xác nhận xóa tài khoản "${acc.email}"`, async () => {
+      try {
+        await removeAllowedEmail(acc.email);
+        if (acc.uid && acc.pwd) {
+          try {
+            const apiKey = "AIzaSyApsLv_N7Je30jz6CRxKX8PmsHyEY5Z4h0";
+            const signInRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: acc.email, password: deobfuscate(acc.pwd || ""), returnSecureToken: true })
             });
-          }
-        } catch(e2) {
-          console.warn("Could not delete Firebase Auth user:", e2);
+            const signInData = await signInRes.json();
+            if (signInData.idToken) {
+              await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${apiKey}`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ idToken: signInData.idToken })
+              });
+            }
+          } catch(e2) { console.warn("Could not delete Firebase Auth user:", e2); }
         }
-      }
-
-      setAccounts(prev => prev.filter(a => a.email !== acc.email));
-      setRevealedIds(prev => { const n = {...prev}; delete n[acc.email]; return n; });
-      setFormSuccess(`✅ Đã xóa tài khoản ${acc.email}`);
-      setTimeout(() => setFormSuccess(""), 3000);
-    } catch(e) {
-      setFormError("Lỗi khi xóa: " + e.message);
-    }
+        setAccounts(prev => prev.filter(a => a.email !== acc.email));
+        setFormSuccess(`✅ Đã xóa tài khoản ${acc.email}`);
+        setTimeout(() => setFormSuccess(""), 3000);
+      } catch(e) { setFormError("Lỗi khi xóa: " + e.message); }
+    });
   };
 
-  const handleRevealRequest = (email) => {
-    if (adminVerified) {
-      // Đã xác minh trong session này → unlock thẳng
-      setRevealedIds(prev => ({...prev, [email]: true}));
-      return;
-    }
-    setRevealId(email); setAdminPwdInput(""); setAdminPwdError("");
+  // ── Mở modal sửa (yêu cầu xác thực) ──
+  const openEdit = (acc) => {
+    requireAuth(`Xác nhận sửa tài khoản "${acc.email}"`, () => {
+      setEditingAcc(acc);
+      setEditEmail(acc.email);
+      setEditPwd(deobfuscate(acc.pwd || ""));
+      setEditErr(""); setShowEditPwd(false);
+    });
   };
 
-  const handleAdminPwdSubmit = async () => {
-    if (!adminPwdInput) { setAdminPwdError("Vui lòng nhập mật khẩu"); return; }
-    setAdminPwdVerifying(true); setAdminPwdError("");
+  // ── Lưu sửa tài khoản ──
+  const handleEditSave = async () => {
+    const newEm = editEmail.trim().toLowerCase();
+    const newPw = editPwd.trim();
+    if (!newEm || !newPw) { setEditErr("Vui lòng điền đầy đủ"); return; }
+    if (newPw.length < 6) { setEditErr("Mật khẩu phải ít nhất 6 ký tự"); return; }
+    setEditLoading(true); setEditErr("");
     try {
-      const credential = firebase.auth.EmailAuthProvider.credential(user.email, adminPwdInput);
-      await window.auth.currentUser.reauthenticateWithCredential(credential);
-      setAdminVerified(true);
-      setRevealedIds(prev => ({...prev, [revealId]: true}));
-      setRevealId(null); setAdminPwdInput("");
+      const apiKey = "AIzaSyApsLv_N7Je30jz6CRxKX8PmsHyEY5Z4h0";
+      // Đăng nhập lại bằng mật khẩu cũ để lấy idToken
+      const signInRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: editingAcc.email, password: deobfuscate(editingAcc.pwd || ""), returnSecureToken: true })
+      });
+      const signInData = await signInRes.json();
+      if (!signInData.idToken) throw new Error("Không thể đăng nhập tài khoản này");
+
+      // Cập nhật mật khẩu
+      const updateRes = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${apiKey}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken: signInData.idToken, password: newPw, returnSecureToken: true })
+      });
+      const updateData = await updateRes.json();
+      if (updateData.error) throw new Error(updateData.error.message);
+
+      // Cập nhật Firestore
+      const id = editingAcc.email.toLowerCase().replace(/[^a-z0-9]/g, "_");
+      await window.db.collection("allowedEmails").doc(id).update({
+        pwd: obfuscate(newPw),
+        updatedAt: new Date().toISOString()
+      });
+
+      setAccounts(prev => prev.map(a => a.email === editingAcc.email
+        ? { ...a, pwd: obfuscate(newPw) }
+        : a
+      ));
+      setEditingAcc(null);
+      setFormSuccess(`✅ Đã cập nhật mật khẩu cho ${editingAcc.email}`);
+      setTimeout(() => setFormSuccess(""), 4000);
     } catch(e) {
-      setAdminPwdError("Mật khẩu không đúng");
+      setEditErr("Lỗi: " + e.message);
     }
-    setAdminPwdVerifying(false);
+    setEditLoading(false);
+  };
+
+  // ── Xem/ẩn mật khẩu ──
+  const handleReveal = (acc) => {
+    if (revealedIds[acc.email]) { setRevealedIds(p => ({...p, [acc.email]: false})); return; }
+    requireAuth(`Xem mật khẩu của "${acc.email}"`, () => {
+      setRevealedIds(p => ({...p, [acc.email]: true}));
+    });
   };
 
   if (!isAdmin) return (
@@ -131,163 +185,187 @@ function AdminPage({ user }) {
       <div style={{textAlign:"center",padding:80}}>
         <div style={{fontSize:48,marginBottom:16}}>🚫</div>
         <div style={{fontSize:18,fontWeight:700,color:"#ef4444"}}>Không có quyền truy cập</div>
-        <div style={{color:"#9ca3af",marginTop:8}}>Chỉ quản trị viên mới có thể xem trang này</div>
       </div>
     </div>
   );
+
+  const totalPages = Math.ceil(accounts.length / ACCOUNTS_PER_PAGE);
+  const pageAccounts = accounts.slice((accPage-1)*ACCOUNTS_PER_PAGE, accPage*ACCOUNTS_PER_PAGE);
 
   return (
     <div className="page-content">
       <div className="page-topbar">
         <div className="page-topbar-title">🔐 Quản Lý Tài Khoản</div>
+        <div style={{fontSize:13,color:"#64748b"}}>{accounts.length + 1} tài khoản</div>
       </div>
 
-      <div style={{maxWidth:620,margin:"0 auto",padding:"0 32px"}}>
+      <div style={{maxWidth:680,margin:"0 auto",padding:"0 28px"}}>
 
-        {/* Form thêm tài khoản */}
+        {/* Form thêm */}
         <div className="form-card">
-          <h3>Thêm tài khoản mới</h3>
-          <p style={{color:"#6b7280",fontSize:14,marginBottom:16}}>Tài khoản được tạo ở đây mới có thể đăng nhập vào hệ thống.</p>
-
+          <h3>➕ Thêm tài khoản mới</h3>
+          <p style={{color:"#64748b",fontSize:13,marginBottom:16}}>Tài khoản được tạo ở đây mới có thể đăng nhập vào hệ thống.</p>
           <div style={{marginBottom:12}}>
             <label className="form-label">Email</label>
             <input className="form-input" type="email" placeholder="email@example.com"
               value={newEmail} onChange={e=>{setNewEmail(e.target.value);setFormError("");}} />
           </div>
-
           <div style={{marginBottom:16}}>
             <label className="form-label">Mật khẩu</label>
             <div style={{position:"relative"}}>
               <input className="form-input" type={showNewPwd?"text":"password"} placeholder="Tối thiểu 6 ký tự"
                 value={newPassword} onChange={e=>{setNewPassword(e.target.value);setFormError("");}}
-                onKeyDown={e=>e.key==="Enter"&&handleAdd()}
-                style={{paddingRight:44}} />
+                onKeyDown={e=>e.key==="Enter"&&handleAdd()} style={{paddingRight:44}} />
               <button type="button" onClick={()=>setShowNewPwd(v=>!v)} style={{
                 position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",
                 background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:18,padding:0
               }}>{showNewPwd?"🙈":"👁️"}</button>
             </div>
           </div>
-
           {formError && <div style={{color:"#ef4444",fontSize:13,marginBottom:10,padding:"7px 12px",background:"#fef2f2",borderRadius:8,border:"1px solid #fecaca"}}>⚠️ {formError}</div>}
           {formSuccess && <div style={{fontSize:13,marginBottom:10,padding:"7px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>{formSuccess}</div>}
-
           <button className="btn-save" style={{width:"100%",height:44,fontSize:14}} onClick={handleAdd} disabled={adding}>
-            {adding ? "⏳ Đang tạo tài khoản..." : "+ Thêm tài khoản"}
+            {adding ? "⏳ Đang tạo..." : "+ Thêm tài khoản"}
           </button>
         </div>
 
-        {/* Danh sách tài khoản */}
+        {/* Danh sách */}
         <div className="form-card">
-          <h3>Danh sách tài khoản ({loading ? "..." : accounts.length + 1})</h3>
-          <p style={{color:"#6b7280",fontSize:13,marginBottom:16}}>Nhấn 👁️ để xem mật khẩu — cần nhập mã xác nhận.</p>
+          <h3>📋 Danh sách tài khoản ({loading ? "..." : accounts.length + 1})</h3>
+          <p style={{color:"#64748b",fontSize:13,marginBottom:16}}>Nhấn 👁️ để xem mật khẩu · ✏️ sửa · 🗑️ xóa — đều cần xác minh mật khẩu.</p>
 
-          {/* Super admin */}
-          <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:"1px solid #eff6ff"}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:700,color:"#1f2937"}}>{SUPER_ADMIN}</div>
-              <div style={{fontSize:12,color:"#9ca3af"}}>Super Admin</div>
+          {/* Super admin row */}
+          <div className="admin-acc-row">
+            <div className="admin-acc-info">
+              <div className="admin-acc-avatar">A</div>
+              <div>
+                <div className="admin-acc-email">{SUPER_ADMIN}</div>
+                <div className="admin-acc-meta">Super Admin</div>
+              </div>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:12,fontFamily:"monospace",background:"#f3f4f6",padding:"3px 10px",borderRadius:6,color:"#6b7280",letterSpacing:2}}>••••••••</span>
-              <span style={{fontSize:12,background:"#eff6ff",color:"#4f7fff",padding:"3px 10px",borderRadius:999,fontWeight:600}}>Admin</span>
+            <div className="admin-acc-actions">
+              <span style={{fontSize:12,background:"#eff6ff",color:"#3b6ff0",padding:"4px 12px",borderRadius:999,fontWeight:700,border:"1px solid #c7d9ff"}}>Admin</span>
             </div>
           </div>
 
           {loading ? (
-            <div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>Đang tải...</div>
+            <div style={{textAlign:"center",padding:30,color:"#94a3b8"}}>Đang tải...</div>
           ) : accounts.length === 0 ? (
-            <div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>Chưa có tài khoản nào</div>
-          ) : (() => {
-            const totalPages = Math.ceil(accounts.length / ACCOUNTS_PER_PAGE);
-            const pageAccounts = accounts.slice((accPage-1)*ACCOUNTS_PER_PAGE, accPage*ACCOUNTS_PER_PAGE);
-            return (<>
+            <div style={{textAlign:"center",padding:30,color:"#94a3b8"}}>Chưa có tài khoản nào</div>
+          ) : (
+            <>
               {pageAccounts.map(acc => {
                 const isRevealed = revealedIds[acc.email];
                 const decodedPwd = isRevealed ? deobfuscate(acc.pwd || "") : null;
+                const avatar = acc.email[0].toUpperCase();
                 return (
-                  <div key={acc.email} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:"1px solid #eff6ff",flexWrap:"wrap"}}>
-                    <div style={{flex:1,minWidth:180}}>
-                      <div style={{fontSize:14,fontWeight:700,color:"#1f2937"}}>{acc.email}</div>
-                      <div style={{fontSize:12,color:"#9ca3af"}}>
-                        Thêm bởi {acc.addedBy} • {acc.addedAt ? new Date(acc.addedAt).toLocaleDateString("vi-VN") : ""}
+                  <div key={acc.email} className="admin-acc-row">
+                    <div className="admin-acc-info">
+                      <div className="admin-acc-avatar">{avatar}</div>
+                      <div style={{minWidth:0}}>
+                        <div className="admin-acc-email">{acc.email}</div>
+                        <div className="admin-acc-meta">
+                          Thêm bởi {acc.addedBy} · {acc.addedAt ? new Date(acc.addedAt).toLocaleDateString("vi-VN") : ""}
+                        </div>
                       </div>
                     </div>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <div style={{display:"flex",alignItems:"center",gap:6,background:"#f8faff",border:"1px solid #e5e7eb",borderRadius:8,padding:"4px 10px"}}>
-                        <span style={{fontSize:13,fontFamily:"monospace",color:"#374151",letterSpacing:isRevealed?1:2,minWidth:80}}>
-                          {isRevealed ? decodedPwd : "••••••••"}
-                        </span>
-                        <button onClick={()=> isRevealed ? setRevealedIds(p=>({...p,[acc.email]:false})) : handleRevealRequest(acc.email)}
-                          style={{background:"none",border:"none",cursor:"pointer",fontSize:16,padding:0,color:"#6b7280"}}>
+                    <div className="admin-acc-actions">
+                      {/* Pwd chip */}
+                      <div className="admin-pwd-chip">
+                        <span className="admin-pwd-text">{isRevealed ? decodedPwd : "••••••••"}</span>
+                        <button className="admin-pwd-eye" onClick={() => handleReveal(acc)} title={isRevealed?"Ẩn":"Xem mật khẩu"}>
                           {isRevealed ? "🙈" : "👁️"}
                         </button>
                       </div>
-                      <button onClick={()=>handleRemove(acc)} style={{
-                        padding:"5px 12px",border:"1px solid #fecaca",borderRadius:8,
-                        background:"#fef2f2",color:"#ef4444",fontSize:13,fontWeight:600,cursor:"pointer"
-                      }}>Xóa</button>
+                      {/* Edit */}
+                      <button className="admin-btn admin-btn-edit" onClick={() => openEdit(acc)} title="Sửa">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      {/* Delete */}
+                      <button className="admin-btn admin-btn-del" onClick={() => handleRemove(acc)} title="Xóa">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      </button>
                     </div>
                   </div>
                 );
               })}
+
+              {/* Pagination */}
               {totalPages > 1 && (
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,paddingTop:14,marginTop:4}}>
-                  <button onClick={()=>setAccPage(p=>Math.max(1,p-1))} disabled={accPage===1}
-                    style={{padding:"4px 12px",borderRadius:6,border:"1px solid #bfdbfe",background:accPage===1?"#f3f4f6":"#eff6ff",color:accPage===1?"#9ca3af":"#2563eb",fontWeight:600,cursor:accPage===1?"default":"pointer",fontSize:13}}>
-                    ‹ Trước
-                  </button>
+                <div className="stu-pagination" style={{marginTop:12}}>
+                  <button className="stu-page-btn" onClick={()=>setAccPage(p=>Math.max(1,p-1))} disabled={accPage===1}>‹ Trước</button>
                   {Array.from({length:totalPages},(_,i)=>i+1).map(p=>(
-                    <button key={p} onClick={()=>setAccPage(p)}
-                      style={{padding:"4px 10px",borderRadius:6,border:"1px solid",
-                        borderColor:p===accPage?"#4f7fff":"#bfdbfe",
-                        background:p===accPage?"#4f7fff":"#fff",
-                        color:p===accPage?"#fff":"#2563eb",
-                        fontWeight:600,cursor:"pointer",fontSize:13,minWidth:32}}>
-                      {p}
-                    </button>
+                    <button key={p} className={"stu-page-btn"+(p===accPage?" active":"")} onClick={()=>setAccPage(p)}>{p}</button>
                   ))}
-                  <button onClick={()=>setAccPage(p=>Math.min(totalPages,p+1))} disabled={accPage===totalPages}
-                    style={{padding:"4px 12px",borderRadius:6,border:"1px solid #bfdbfe",background:accPage===totalPages?"#f3f4f6":"#eff6ff",color:accPage===totalPages?"#9ca3af":"#2563eb",fontWeight:600,cursor:accPage===totalPages?"default":"pointer",fontSize:13}}>
-                    Sau ›
-                  </button>
-                  <span style={{fontSize:12,color:"#9ca3af",marginLeft:4}}>{accPage}/{totalPages}</span>
+                  <button className="stu-page-btn" onClick={()=>setAccPage(p=>Math.min(totalPages,p+1))} disabled={accPage===totalPages}>Sau ›</button>
                 </div>
               )}
-            </>);
-          })()}
+            </>
+          )}
         </div>
       </div>
 
-      {/* Modal nhập mật khẩu admin để xem password người dùng */}
-      {revealId && (
-        <div className="modal-overlay" onClick={()=>{ setRevealId(null); setAdminPwdInput(""); setAdminPwdError(""); }}>
+      {/* ── AUTH GATE MODAL ── */}
+      {authGate && (
+        <div className="modal-overlay" onClick={()=>{setAuthGate(null);setAuthPwd("");setAuthErr("");}}>
           <div className="modal-dialog" onClick={e=>e.stopPropagation()}>
-            <div className="modal-dialog-header" style={{background:"linear-gradient(135deg,#4f7fff,#2563eb)"}}>
-              🔑 Xác minh danh tính Admin
-            </div>
+            <div className="modal-dialog-header">🔑 Xác minh danh tính</div>
             <div className="modal-dialog-body">
-              <div style={{textAlign:"center",marginBottom:16}}>
-                <div style={{fontSize:32,marginBottom:8}}>🔐</div>
-                <div style={{fontSize:14,color:"#374151"}}>Nhập mật khẩu tài khoản Admin để xem mật khẩu của</div>
-                <div style={{fontSize:14,fontWeight:700,color:"#2563eb",marginTop:6,wordBreak:"break-all"}}>{revealId}</div>
-                <div style={{fontSize:12,color:"#9ca3af",marginTop:4}}>{user?.email}</div>
+              <div style={{textAlign:"center",marginBottom:18}}>
+                <div style={{fontSize:36,marginBottom:8}}>🔐</div>
+                <div style={{fontSize:14,color:"#374151",fontWeight:600}}>{authGate.title}</div>
+                <div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>Nhập mật khẩu tài khoản admin để tiếp tục</div>
               </div>
               <label className="form-label">Mật khẩu Admin</label>
               <input className="form-input" type="password" autoFocus
                 placeholder="Nhập mật khẩu đăng nhập của bạn"
-                value={adminPwdInput}
-                onChange={e=>{ setAdminPwdInput(e.target.value); setAdminPwdError(""); }}
-                onKeyDown={e=>e.key==="Enter"&&handleAdminPwdSubmit()}
-                style={{borderColor:adminPwdError?"#ef4444":undefined}} />
-              {adminPwdError && (
-                <div style={{color:"#ef4444",fontSize:13,marginTop:6,fontWeight:600}}>❌ {adminPwdError}</div>
-              )}
+                value={authPwd}
+                onChange={e=>{setAuthPwd(e.target.value);setAuthErr("");}}
+                onKeyDown={e=>e.key==="Enter"&&handleAuthSubmit()}
+                style={{borderColor:authErr?"#ef4444":undefined}} />
+              {authErr && <div style={{color:"#ef4444",fontSize:13,marginTop:6,fontWeight:600}}>❌ {authErr}</div>}
             </div>
             <div className="modal-dialog-footer">
-              <button className="btn-cancel" onClick={()=>{ setRevealId(null); setAdminPwdInput(""); setAdminPwdError(""); }}>Huỷ</button>
-              <button className="btn-save" onClick={handleAdminPwdSubmit} disabled={adminPwdVerifying}>
-                {adminPwdVerifying ? "Đang kiểm tra..." : "Xác nhận"}
+              <button className="btn-cancel" onClick={()=>{setAuthGate(null);setAuthPwd("");setAuthErr("");}}>Huỷ</button>
+              <button className="btn-save" onClick={handleAuthSubmit} disabled={authLoading}>
+                {authLoading ? "Đang kiểm tra..." : "Xác nhận"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT MODAL ── */}
+      {editingAcc && (
+        <div className="modal-overlay" onClick={()=>setEditingAcc(null)}>
+          <div className="modal-dialog" onClick={e=>e.stopPropagation()}>
+            <div className="modal-dialog-header">✏️ Sửa tài khoản</div>
+            <div className="modal-dialog-body">
+              <div style={{fontSize:12,color:"#64748b",marginBottom:16,padding:"8px 12px",background:"#f8faff",borderRadius:8,border:"1px solid #e2e8f0"}}>
+                Tài khoản: <b style={{color:"#3b6ff0"}}>{editingAcc.email}</b>
+              </div>
+              <label className="form-label">Mật khẩu mới</label>
+              <div style={{position:"relative"}}>
+                <input className="form-input" type={showEditPwd?"text":"password"}
+                  placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)"
+                  value={editPwd}
+                  onChange={e=>{setEditPwd(e.target.value);setEditErr("");}}
+                  onKeyDown={e=>e.key==="Enter"&&handleEditSave()}
+                  style={{paddingRight:44, borderColor:editErr?"#ef4444":undefined}} />
+                <button type="button" onClick={()=>setShowEditPwd(v=>!v)} style={{
+                  position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",
+                  background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:18,padding:0
+                }}>{showEditPwd?"🙈":"👁️"}</button>
+              </div>
+              {editErr && <div style={{color:"#ef4444",fontSize:13,marginTop:8,fontWeight:600}}>⚠️ {editErr}</div>}
+              <div style={{marginTop:14,padding:"10px 14px",background:"#fffbeb",borderRadius:8,border:"1px solid #fde68a",fontSize:12,color:"#92400e"}}>
+                ⚠️ Sau khi đổi mật khẩu, tài khoản này cần đăng nhập lại bằng mật khẩu mới.
+              </div>
+            </div>
+            <div className="modal-dialog-footer">
+              <button className="btn-cancel" onClick={()=>setEditingAcc(null)}>Huỷ</button>
+              <button className="btn-save" onClick={handleEditSave} disabled={editLoading}>
+                {editLoading ? "Đang lưu..." : "Lưu thay đổi"}
               </button>
             </div>
           </div>

@@ -132,7 +132,9 @@ function StudentPage({ classes, setClasses, user, passcodeUnlocked, setPasscodeU
           parentPhone: student.parentPhone || "",
           note: student.note || "",
           birthYear: student.birthYear || "",
-          inactive: !!student.inactive
+          inactive: !!student.inactive,
+          inactiveMonth: student.inactiveMonth || null,
+          inactiveYear: student.inactiveYear || null,
       });
       setShowModal(true);
     };
@@ -186,7 +188,9 @@ function StudentPage({ classes, setClasses, user, passcodeUnlocked, setPasscodeU
                       parentPhone: (formData.parentPhone || "").trim(),
                       note: (formData.note || "").trim(),
                       birthYear: (formData.birthYear || "").trim(),
-                      inactive: !!formData.inactive
+                      inactive: !!formData.inactive,
+                      inactiveMonth: formData.inactive ? (formData.inactiveMonth || new Date().getMonth()+1) : null,
+                      inactiveYear: formData.inactive ? (formData.inactiveYear || new Date().getFullYear()) : null
                   })
               };
           }
@@ -444,14 +448,13 @@ function StudentPage({ classes, setClasses, user, passcodeUnlocked, setPasscodeU
               <colgroup>
                 <col style={{width:52}}/>
                 <col style={{width:72}}/>
-                <col/>
-                <col style={{width:100}}/>
-                <col style={{width:110}}/>
-                <col style={{width:110}}/>
-                <col style={{width:100}}/>
+                <col style={{width:200}}/>
+                <col style={{width:90}}/>
                 <col style={{width:110}}/>
                 <col style={{width:110}}/>
                 <col style={{width:90}}/>
+                <col style={{width:110}}/>
+                <col style={{width:110}}/>
               </colgroup>
               <thead>
                 <tr>
@@ -460,7 +463,6 @@ function StudentPage({ classes, setClasses, user, passcodeUnlocked, setPasscodeU
                   <th rowSpan={2} style={{verticalAlign:'middle'}}>HỌ VÀ TÊN</th>
                   <th className="center" colSpan={3} style={{background:'#dbeafe', color:'#1d4ed8', borderBottom:'2px solid #bfdbfe'}}>HỌC CHÍNH</th>
                   <th className="center" colSpan={3} style={{background:'#ede9fe', color:'#6d28d9', borderBottom:'2px solid #ddd6fe'}}>HỌC KÈM</th>
-                  <th className="center" rowSpan={2} style={{verticalAlign:'middle'}}>THAO TÁC</th>
                 </tr>
                 <tr>
                   <th className="center" style={{background:'#eff6ff'}}>SỐ BUỔI</th>
@@ -485,25 +487,18 @@ function StudentPage({ classes, setClasses, user, passcodeUnlocked, setPasscodeU
                           <td className="name-cell">
                             <span>{s.name}</span>
                             {s.inactive && (
-                              <span style={{marginLeft:8, fontSize:11, fontWeight:600, color:'#ef4444', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:4, padding:'1px 6px'}}>Đã nghỉ</span>
+                              <span style={{marginLeft:8, fontSize:11, fontWeight:600, color:'#ef4444', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:4, padding:'1px 6px'}}>
+                                Nghỉ T{s.inactiveMonth || '?'}/{s.inactiveYear || '?'}
+                              </span>
                             )}
                           </td>
                           <td className="center">{s.mainCount}</td>
                           <td className="right price-cell">{fmt(s.pricePerSession)}</td>
-                          <td className="right" style={{fontWeight:600, color:'#1f2937'}}>{fmt(s.mainFee)}</td>
+                          <td className="right" style={{fontWeight:700, color:'#1d4ed8'}}>{fmt(s.mainFee)}</td>
                           <td className="center">{s.hasKem ? s.kemCount : "-"}</td>
                           <td className="right price-cell">{s.hasKem ? fmt(s.kemPrice) : "-"}</td>
-                          <td className="right" style={{fontWeight:600, color:'#1f2937'}}>{s.hasKem ? fmt(s.kemFee) : "-"}</td>
-                          <td className="center">
-                             <div className="action-btn-group">
-                                <button className="action-btn edit" title="Sửa" onClick={(e) => { e.stopPropagation(); openEditModal(s); }}>
-                                    <Icon name="edit" size={16} />
-                                </button>
-                                <button className="action-btn delete" title="Xóa" onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }}>
-                                    <Icon name="trash" size={16} />
-                                </button>
-                             </div>
-                          </td>
+                          <td className="right" style={{fontWeight:700, color:'#6d28d9'}}>{s.hasKem ? fmt(s.kemFee) : <span style={{color:'#94a3b8'}}>-</span>}</td>
+
                         </tr>
                       ))
                 )}
@@ -609,17 +604,40 @@ function StudentPage({ classes, setClasses, user, passcodeUnlocked, setPasscodeU
                 {/* Trạng thái nghỉ học — chỉ hiện khi sửa */}
                 {modalMode === "edit" && (
                   <div style={{marginTop:18, paddingTop:14, borderTop:'1.5px solid #bfdbfe'}}>
-                    <label style={{display:'flex', alignItems:'center', gap:10, cursor:'pointer'}}>
+                    <label style={{display:'flex', alignItems:'center', gap:10, cursor:'pointer', marginBottom:10}}>
                       <input type="checkbox" checked={!!formData.inactive}
-                        onChange={e => setFormData(f => ({...f, inactive: e.target.checked}))}
+                        onChange={e => setFormData(f => ({
+                          ...f,
+                          inactive: e.target.checked,
+                          inactiveMonth: e.target.checked ? (f.inactiveMonth || (new Date().getMonth()+1)) : null,
+                          inactiveYear:  e.target.checked ? (f.inactiveYear  || new Date().getFullYear())  : null,
+                        }))}
                         style={{width:16, height:16, accentColor:'#ef4444'}} />
                       <span style={{fontSize:14, fontWeight:600, color: formData.inactive ? '#ef4444' : '#374151'}}>
                         🚫 Đã nghỉ học
                       </span>
                     </label>
                     {formData.inactive && (
-                      <div style={{fontSize:12, color:'#ef4444', marginTop:6, marginLeft:26}}>
-                        Học sinh này sẽ không hiển thị ở Điểm Danh và Học Phí
+                      <div style={{marginLeft:26}}>
+                        <div style={{fontSize:12, color:'#6b7280', marginBottom:8}}>
+                          Nghỉ từ tháng — sẽ ẩn khỏi Điểm Danh &amp; Học Phí từ tháng này trở đi:
+                        </div>
+                        <div style={{display:'flex', gap:10, alignItems:'center'}}>
+                          <select className="form-input" style={{width:120}}
+                            value={formData.inactiveMonth || new Date().getMonth()+1}
+                            onChange={e => setFormData(f => ({...f, inactiveMonth: parseInt(e.target.value)}))}>
+                            {[...Array(12)].map((_,i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}
+                          </select>
+                          <select className="form-input" style={{width:100}}
+                            value={formData.inactiveYear || new Date().getFullYear()}
+                            onChange={e => setFormData(f => ({...f, inactiveYear: parseInt(e.target.value)}))}>
+                            {[2023,2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+                          </select>
+                        </div>
+                        <div style={{fontSize:12, color:'#ef4444', marginTop:8}}>
+                          Từ tháng {formData.inactiveMonth || new Date().getMonth()+1}/{formData.inactiveYear || new Date().getFullYear()} trở đi sẽ không xuất hiện.
+                          Dữ liệu các tháng trước vẫn giữ nguyên.
+                        </div>
                       </div>
                     )}
                   </div>
@@ -662,11 +680,20 @@ function StudentPage({ classes, setClasses, user, passcodeUnlocked, setPasscodeU
     const kemCount = studentSessions.filter(ses => (ses.attendanceKem || []).includes(liveStudent.id)).length;
 
     return (
+      <>
         <div className="page-content">
              <div className="page-topbar">
                 <div style={{display:'flex', gap:10, alignItems:'center'}}>
                     <button className="btn-back" onClick={() => setStep(1)}>‹ Quay lại</button>
                     <div className="page-topbar-title">{liveStudent.name} - Chi tiết tháng {viewMonth}/{viewYear}</div>
+                </div>
+                <div style={{display:'flex', gap:8}}>
+                    <button className="stu-detail-btn stu-detail-edit" onClick={() => openEditModal(liveStudent)}>
+                      <Icon name="edit" size={15}/> Sửa thông tin
+                    </button>
+                    <button className="stu-detail-btn stu-detail-del" onClick={() => handleDelete(liveStudent.id)}>
+                      <Icon name="trash" size={15}/> Xóa học sinh
+                    </button>
                 </div>
              </div>
 
@@ -816,6 +843,105 @@ function StudentPage({ classes, setClasses, user, passcodeUnlocked, setPasscodeU
                 </div>
              </div>
         </div>
+
+        {showModal && (
+          <div className="modal-overlay" onClick={() => setShowModal(false)}>
+            <div className="modal-dialog" onClick={e => e.stopPropagation()}>
+              <div className="modal-dialog-header">Sửa thông tin</div>
+              <div className="modal-dialog-body">
+                {editingStudent?.studentCode && (
+                  <div style={{fontSize:12,color:'#6b7280',marginBottom:12,padding:'6px 10px',background:'#f8fafc',borderRadius:6,border:'1px solid #e2e8f0'}}>
+                    Mã học viên: <b style={{color:'#4f7fff'}}>{editingStudent.studentCode}</b>
+                  </div>
+                )}
+                <label className="form-label">Tên học sinh</label>
+                <input className="form-input" autoFocus value={formData.name || ""}
+                  onChange={e => setFormData(f => ({ ...f, name: e.target.value }))}
+                  onKeyDown={e => e.key === "Enter" && handleSave()} />
+                <label className="form-label" style={{marginTop:14}}>Học phí / buổi chính (VND)</label>
+                <input className="form-input" type="number" value={formData.pricePerSession || ""}
+                  onChange={e => setFormData(f => ({ ...f, pricePerSession: e.target.value }))} />
+                <div style={{marginTop:16,display:'flex',alignItems:'center',gap:8}}>
+                  <input type="checkbox" id="chkKemStep2" style={{width:16,height:16}} checked={!!formData.hasKem}
+                    onChange={e => setFormData(f => ({ ...f, hasKem: e.target.checked }))} />
+                  <label htmlFor="chkKemStep2" style={{fontSize:14,fontWeight:500,color:'#374151',cursor:'pointer'}}>Học sinh có học kèm</label>
+                </div>
+                {formData.hasKem && (<>
+                  <label className="form-label" style={{marginTop:10}}>Học phí / buổi kèm (VND)</label>
+                  <input className="form-input" type="number" value={formData.kemPrice || ""}
+                    onChange={e => setFormData(f => ({ ...f, kemPrice: e.target.value }))} />
+                </>)}
+                <div style={{margin:'18px 0 10px',paddingTop:14,borderTop:'1.5px solid #bfdbfe'}}>
+                  <div style={{fontSize:13,fontWeight:700,color:'#4f7fff',marginBottom:12}}>🎓 Thông tin học sinh</div>
+                  <label className="form-label">Năm sinh</label>
+                  <input className="form-input" value={formData.birthYear || ""} placeholder="VD: 2015" maxLength={4}
+                    onChange={e => setFormData(f => ({ ...f, birthYear: e.target.value.replace(/\D/g,'') }))} />
+                </div>
+                <div style={{margin:'18px 0 10px',paddingTop:14,borderTop:'1.5px solid #bfdbfe'}}>
+                  <div style={{fontSize:13,fontWeight:700,color:'#4f7fff',marginBottom:12}}>👨‍👩‍👧 Thông tin phụ huynh</div>
+                  <label className="form-label">Tên phụ huynh</label>
+                  <input className="form-input" value={formData.parentName || ""} placeholder="VD: Nguyễn Văn A"
+                    onChange={e => setFormData(f => ({ ...f, parentName: e.target.value }))} />
+                  <label className="form-label" style={{marginTop:10}}>Số điện thoại</label>
+                  <input className="form-input" value={formData.parentPhone || ""} placeholder="VD: 0912 345 678"
+                    onChange={e => setFormData(f => ({ ...f, parentPhone: e.target.value }))} />
+                  <label className="form-label" style={{marginTop:10}}>Ghi chú</label>
+                  <textarea className="form-input" value={formData.note || ""} rows={3}
+                    style={{resize:'vertical',fontFamily:'inherit'}}
+                    onChange={e => setFormData(f => ({ ...f, note: e.target.value }))} />
+                </div>
+                <div style={{marginTop:18,paddingTop:14,borderTop:'1.5px solid #bfdbfe'}}>
+                  <label style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer',marginBottom:10}}>
+                    <input type="checkbox" checked={!!formData.inactive}
+                      onChange={e => setFormData(f => ({
+                        ...f, inactive: e.target.checked,
+                        inactiveMonth: e.target.checked ? (f.inactiveMonth || (new Date().getMonth()+1)) : null,
+                        inactiveYear:  e.target.checked ? (f.inactiveYear  || new Date().getFullYear())  : null,
+                      }))}
+                      style={{width:16,height:16,accentColor:'#ef4444'}} />
+                    <span style={{fontSize:14,fontWeight:600,color:formData.inactive?'#ef4444':'#374151'}}>🚫 Đã nghỉ học</span>
+                  </label>
+                  {formData.inactive && (
+                    <div style={{marginLeft:26}}>
+                      <div style={{fontSize:12,color:'#6b7280',marginBottom:8}}>Nghỉ từ tháng (ẩn từ tháng này trở đi):</div>
+                      <div style={{display:'flex',gap:10}}>
+                        <select className="form-input" style={{width:120}}
+                          value={formData.inactiveMonth || new Date().getMonth()+1}
+                          onChange={e => setFormData(f => ({...f,inactiveMonth:parseInt(e.target.value)}))}>
+                          {[...Array(12)].map((_,i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}
+                        </select>
+                        <select className="form-input" style={{width:100}}
+                          value={formData.inactiveYear || new Date().getFullYear()}
+                          onChange={e => setFormData(f => ({...f,inactiveYear:parseInt(e.target.value)}))}>
+                          {[2023,2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                      </div>
+                      <div style={{fontSize:12,color:'#ef4444',marginTop:6}}>
+                        Dữ liệu trước tháng {formData.inactiveMonth || new Date().getMonth()+1}/{formData.inactiveYear || new Date().getFullYear()} vẫn giữ nguyên.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="modal-dialog-footer">
+                <button className="btn-cancel" onClick={() => setShowModal(false)}>Huỷ</button>
+                <button className="btn-save" onClick={handleSave}>Lưu</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {passcodeGate && (
+          <PasscodeGate
+            title={passcodeGate.title}
+            message={passcodeGate.message}
+            onConfirm={passcodeGate.onConfirm}
+            onCancel={() => setPasscodeGate(null)}
+            userUid={user && user.uid}
+            passcodeUnlocked={passcodeUnlocked}
+            setPasscodeUnlocked={setPasscodeUnlocked}
+          />
+        )}
+      </>
     );
   }
 

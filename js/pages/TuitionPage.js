@@ -1,6 +1,58 @@
 // TUITION PAGE
 // ─────────────────────────────────────────────────────────────────
 
+// Kiểm tra học sinh có active trong tháng/năm không
+function isStudentActive(student, year, month) {
+  if (!student.inactive) return true;
+  const iy = student.inactiveYear;
+  const im = student.inactiveMonth;
+  if (!iy || !im) return false; // inactive nhưng không có ngày → ẩn hết
+  const viewDate = parseInt(year) * 12 + parseInt(month);
+  const inactiveDate = iy * 12 + im;
+  return viewDate <= inactiveDate; // hiện tháng nghỉ, ẩn từ tháng sau
+}
+
+
+// Scale receipt đúng tâm
+function ReceiptScalePreview({ selected, bankInfo, qrCodeUrl, profile, selYear, selMonth }) {
+  const containerRef = useRef(null);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    const doScale = () => {
+      if (!containerRef.current || !wrapperRef.current) return;
+      const containerW = containerRef.current.clientWidth;
+      if (containerW <= 0) return;
+      const scale = Math.min(containerW / 1080, 0.30);
+      const receiptEl = wrapperRef.current.querySelector('.receipt');
+      const h = receiptEl ? receiptEl.offsetHeight : 1920;
+      wrapperRef.current.style.width = '1080px';
+      wrapperRef.current.style.transform = `scale(${scale})`;
+      wrapperRef.current.style.transformOrigin = 'top left';
+      wrapperRef.current.style.marginLeft = `${(containerW - 1080 * scale) / 2}px`;
+      wrapperRef.current.style.height = Math.ceil(h * scale) + 'px';
+    };
+    const t1 = setTimeout(doScale, 80);
+    const t2 = setTimeout(doScale, 300);
+    window.addEventListener('resize', doScale);
+    return () => { clearTimeout(t1); clearTimeout(t2); window.removeEventListener('resize', doScale); };
+  }, [selected]);
+
+  return (
+    <div ref={containerRef} style={{
+      overflowY:'auto', overflowX:'hidden', background:'#f0f4ff',
+      flex:1, minHeight:0, padding:'12px 0'
+    }}>
+      <div ref={wrapperRef} style={{display:'block'}}>
+        <ReceiptMarkup
+          student={selected} bankInfo={bankInfo} qrCodeUrl={qrCodeUrl} profile={profile}
+          context={{year: selYear, month: selMonth}}
+        />
+      </div>
+    </div>
+  );
+}
+
 function TuitionPage({ classes, user }) {
   // Navigation State
   const [step, setStep] = useState(0); // 0: Year, 1: Month, 2: Class, 3: Table
@@ -82,7 +134,7 @@ function TuitionPage({ classes, user }) {
       return y === selYear && parseInt(m) === selMonth;
     });
 
-    return (activeClass.students || []).filter(s => !s.inactive).map((s, idx) => {
+    return (activeClass.students || []).filter(s => isStudentActive(s, selYear, selMonth)).map((s, idx) => {
       const sessions = validSessions.filter(ses => (ses.attendance || []).includes(s.id)).length;
       const kemSessions = s.hasKem ? validSessions.filter(ses => (ses.attendanceKem || []).includes(s.id)).length : 0;
       const baseFee = sessions * (s.pricePerSession || 0);
@@ -266,103 +318,185 @@ function TuitionPage({ classes, user }) {
 
   // VIEW 3: TABLE
   if (step === 3 && activeClass) {
+    const collectedPct = totalFee > 0 ? Math.round(collectedFee / totalFee * 100) : 0;
+    const uncollectedPct = 100 - collectedPct;
     return (
       <div className="page-content">
         <div className="page-topbar">
           <button className="btn-back" onClick={() => setStep(2)}>‹ Chọn lại lớp</button>
-          <div className="page-topbar-title">Học Phí - {activeClass.name} (T{selMonth}/{selYear})</div>
+          <div className="page-topbar-title">
+            {activeClass.name}
+            <span className="tui-month-tag">T{selMonth}/{selYear}</span>
+          </div>
         </div>
 
-        <div className="stats-grid">
-          <StatCard iconBg={PINK} icon={<Icon name="money" />}
-            label="Tổng cần thu" value={`${fmt(totalFee)} đ`} sub={`${students.length} học sinh`} />
-          <StatCard iconBg={GREEN} icon={<Icon name="check" />}
-            label="Đã thu được" value={`${fmt(collectedFee)} đ`} sub={`${paidList.length} học sinh`} />
-          <StatCard iconBg={RED} icon={<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>}
-            label="Chưa thu" value={`${fmt(uncollectedFee)} đ`} sub={`${unpaidList.length} học sinh`} />
-          <StatCard iconBg={PURPLE} icon={<Icon name="users" />}
-            label="Sĩ số lớp" value={students.length} sub="Học sinh" />
-        </div>
-
-        {/* --- Toolbar: Filter & Download --- */}
-        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 32px 16px', flexWrap: 'wrap', gap: 10}}>
-            <div style={{display:'flex', gap: 10, alignItems: 'center'}}>
-                <span style={{fontSize: 13, fontWeight: 600, color: '#6b7280'}}>Lọc trạng thái:</span>
-                <select className="form-input" style={{width: 140}} value={filter} onChange={e => setFilter(e.target.value)}>
-                    <option value="all">Tất cả</option>
-                    <option value="paid">Đã đóng</option>
-                    <option value="unpaid">Chưa đóng</option>
-                </select>
+        {/* ── STAT CARDS ── */}
+        <div className="tui-stat-row">
+          <div className="tui-stat-card tui-stat-total">
+            <div className="tui-sc-icon" style={{background:'rgba(59,111,240,0.10)', color:'#3b6ff0'}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             </div>
-            
-            <div style={{display:'flex', gap: 8}}>
-                <button className="btn-back" style={{fontSize: 12}} onClick={() => downloadZip(students, 'TatCa')} disabled={isZipping}>
-                    📦 Tải ZIP Tất Cả
-                </button>
-                <button className="btn-back" style={{fontSize: 12}} onClick={() => downloadZip(unpaidList, 'ChuaDong')} disabled={isZipping}>
-                    📦 Tải ZIP Chưa Đóng
-                </button>
-                <button className="btn-back" style={{fontSize: 12}} onClick={() => downloadZip(paidList, 'DaDong')} disabled={isZipping}>
-                    📦 Tải ZIP Đã Đóng
-                </button>
+            <div className="tui-sc-body">
+              <div className="tui-sc-label">Tổng cần thu</div>
+              <div className="tui-sc-val">{fmt(totalFee)} <span className="tui-sc-unit">đ</span></div>
+              <div className="tui-sc-sub">{students.length} học sinh</div>
             </div>
+          </div>
+          <div className="tui-stat-card tui-stat-collected">
+            <div className="tui-sc-icon" style={{background:'rgba(16,185,129,0.10)', color:'#10b981'}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div className="tui-sc-body">
+              <div className="tui-sc-label">Đã thu</div>
+              <div className="tui-sc-val" style={{color:"#10b981"}}>{fmt(collectedFee)} <span className="tui-sc-unit">đ</span></div>
+              <div className="tui-sc-sub">{paidList.length} học sinh · <b style={{color:'#10b981'}}>{collectedPct}%</b></div>
+            </div>
+          </div>
+          <div className="tui-stat-card tui-stat-uncollected">
+            <div className="tui-sc-icon" style={{background:'rgba(239,68,68,0.09)', color:'#ef4444'}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div className="tui-sc-body">
+              <div className="tui-sc-label">Chưa thu</div>
+              <div className="tui-sc-val" style={{color:"#ef4444"}}>{fmt(uncollectedFee)} <span className="tui-sc-unit">đ</span></div>
+              <div className="tui-sc-sub">{unpaidList.length} học sinh · <b style={{color:'#ef4444'}}>{uncollectedPct}%</b></div>
+            </div>
+          </div>
+          <div className="tui-stat-card tui-stat-progress">
+            <div className="tui-sc-icon" style={{background:'rgba(139,92,246,0.10)', color:'#8b5cf6'}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div className="tui-sc-body">
+              <div className="tui-sc-label">Sĩ số lớp</div>
+              <div className="tui-sc-val">{students.length} <span className="tui-sc-unit">HS</span></div>
+              <div className="tui-sc-progress">
+                <div className="tui-sc-bar"><div className="tui-sc-fill" style={{width:collectedPct+'%'}}/></div>
+                <span className="tui-sc-pct">{collectedPct}%</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="table-section">
-          <div className="table-header-row">
-            <div className="table-title">Danh sách học phí ({filteredStudents.length})</div>
+        {/* ── TOOLBAR ── */}
+        <div className="tui-toolbar">
+          <div className="tui-filter-group">
+            <button className={"tui-filter-btn" + (filter==="all"?" active":"")} onClick={()=>setFilter("all")}>
+              Tất cả <span className="tui-filter-count">{students.length}</span>
+            </button>
+            <button className={"tui-filter-btn tui-filter-unpaid" + (filter==="unpaid"?" active":"")} onClick={()=>setFilter("unpaid")}>
+              Chưa thu <span className="tui-filter-count">{unpaidList.length}</span>
+            </button>
+            <button className={"tui-filter-btn tui-filter-paid" + (filter==="paid"?" active":"")} onClick={()=>setFilter("paid")}>
+              Đã thu <span className="tui-filter-count">{paidList.length}</span>
+            </button>
+          </div>
+          <div style={{display:'flex', gap:8}}>
+            <button className="tui-zip-btn" onClick={()=>downloadZip(students,'TatCa')} disabled={isZipping}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Tất Cả
+            </button>
+            <button className="tui-zip-btn tui-zip-unpaid" onClick={()=>downloadZip(unpaidList,'ChuaDong')} disabled={isZipping}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Chưa Đóng
+            </button>
+            <button className="tui-zip-btn tui-zip-paid" onClick={()=>downloadZip(paidList,'DaDong')} disabled={isZipping}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Đã Đóng
+            </button>
+          </div>
+        </div>
+
+        {/* ── TABLE ── */}
+        <div className="tui-table-section">
+          <div className="tui-table-topbar">
+            <div className="tui-table-title">
+              Danh sách học phí
+              <span className="stu-table-badge">{filteredStudents.length} học sinh</span>
+            </div>
+            {/* mini progress bar */}
+            <div className="tui-mini-progress">
+              <div className="tui-mini-bar">
+                <div className="tui-mini-fill" style={{width:collectedPct+'%'}}/>
+              </div>
+              <span className="tui-mini-pct">{collectedPct}% đã thu</span>
+            </div>
           </div>
           <div className="table-wrap">
-            <table className="students-table">
+            <table className="stu-table">
+              <colgroup>
+                <col style={{width:52}}/>
+                <col/>
+                <col style={{width:90}}/>
+                <col style={{width:110}}/>
+                <col style={{width:110}}/>
+                <col style={{width:90}}/>
+                <col style={{width:110}}/>
+                <col style={{width:110}}/>
+                <col style={{width:110}}/>
+                <col style={{width:52}}/>
+              </colgroup>
               <thead>
-                <tr>
-                  <th className="center" rowSpan={2} style={{verticalAlign:'middle'}}>STT</th>
-                  <th className="center" rowSpan={2} style={{verticalAlign:'middle'}}>TRẠNG THÁI</th>
-                  <th rowSpan={2} style={{verticalAlign:'middle'}}>HỌ VÀ TÊN</th>
-                  <th className="center" colSpan={3} style={{background:'#dbeafe', color:'#1d4ed8', borderBottom:'2px solid #bfdbfe'}}>HỌC CHÍNH</th>
-                  <th className="center" colSpan={3} style={{background:'#ede9fe', color:'#6d28d9', borderBottom:'2px solid #ddd6fe'}}>HỌC KÈM</th>
-                  <th className="center" rowSpan={2} style={{verticalAlign:'middle'}}>COPY</th>
+                <tr className="stu-thead-group">
+                  <th rowSpan={2} className="stu-th center" style={{verticalAlign:'middle', width:52}}>STT</th>
+                  <th rowSpan={2} className="stu-th" style={{verticalAlign:'middle'}}>HỌ VÀ TÊN</th>
+                  <th colSpan={3} className="stu-th-group stu-th-main">
+                    <span className="stu-th-group-dot stu-dot-main"/>HỌC CHÍNH
+                  </th>
+                  <th colSpan={3} className="stu-th-group stu-th-kem">
+                    <span className="stu-th-group-dot stu-dot-kem"/>HỌC KÈM
+                  </th>
+                  <th rowSpan={2} className="stu-th center" style={{verticalAlign:'middle', width:110}}>TRẠNG THÁI</th>
+                  <th rowSpan={2} className="stu-th center" style={{verticalAlign:'middle', width:52}}>PHIẾU</th>
                 </tr>
                 <tr>
-                  <th className="center" style={{background:'#eff6ff'}}>SỐ BUỔI</th>
-                  <th className="right" style={{background:'#eff6ff'}}>HP / BUỔI</th>
-                  <th className="right" style={{background:'#eff6ff'}}>TỔNG HP</th>
-                  <th className="center" style={{background:'#f5f3ff'}}>SỐ BUỔI</th>
-                  <th className="right" style={{background:'#f5f3ff'}}>HP / BUỔI</th>
-                  <th className="right" style={{background:'#f5f3ff'}}>TỔNG HP</th>
+                  <th className="stu-th center stu-sub-main">BUỔI</th>
+                  <th className="stu-th right stu-sub-main">HP/BUỔI</th>
+                  <th className="stu-th right stu-sub-main">TỔNG</th>
+                  <th className="stu-th center stu-sub-kem">BUỔI</th>
+                  <th className="stu-th right stu-sub-kem">HP/BUỔI</th>
+                  <th className="stu-th right stu-sub-kem">TỔNG</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredStudents.length === 0 ? (
-                    <tr><td colSpan="9" className="center" style={{padding:20, color:'#9ca3af'}}>Không tìm thấy học sinh</td></tr>
-                ) : (
-                    filteredStudents.map((s, i) => {
-                    const isPaid = paidStudents[s.id];
-                    const cs = copyState[s.id] || "idle";
-                    return (
-                        <tr key={s.id} className="student-row" onClick={() => { setSelected(s); setPreview(true); }}>
-                        <td className="center stt-cell">{i + 1}</td>
-                        <td className="center" onClick={e => e.stopPropagation()}>
-                            <button className={`status-badge ${isPaid ? "paid" : "unpaid"}`} onClick={() => togglePaid(s.id)}>
-                            <span className="status-dot"></span>{isPaid ? "Đã thu" : "Chưa thu"}
-                            </button>
-                        </td>
-                        <td className="name-cell">{s.name}</td>
-                        <td className="center">{s.sessions}</td>
-                        <td className="right price-cell">{fmt(s.pricePerSession)}</td>
-                        <td className="right" style={{fontWeight:600, color:'#1f2937'}}>{fmt(s.baseFee)}</td>
-                        <td className="center">{s.kemSessions > 0 ? s.kemSessions : "-"}</td>
-                        <td className="right price-cell">{s.kemFee > 0 ? fmt(s.kemPrice) : "-"}</td>
-                        <td className="right" style={{fontWeight:600, color:'#1f2937'}}>{s.kemFee > 0 ? fmt(s.kemFee) : "-"}</td>
-                        <td className="center" onClick={e => copyOneRow(e, s)}>
-                            <button className={`copy-btn ${cs === "loading" ? "loading" : cs === "copied" ? "copied" : ""}`}>
-                            {cs !== "loading" && <CopyIcon state={cs} />}
-                            </button>
-                        </td>
-                        </tr>
-                    );
-                    })
-                )}
+                  <tr><td colSpan="10" style={{padding:'56px 20px', textAlign:'center', color:'#94a3b8', fontSize:14}}>
+                    <div style={{fontSize:40, marginBottom:12}}>🔍</div>Không có học sinh nào
+                  </td></tr>
+                ) : filteredStudents.map((s, i) => {
+                  const isPaid = paidStudents[s.id];
+                  const cs = copyState[s.id] || "idle";
+                  const totalStudent = s.baseFee + s.kemFee;
+                  return (
+                    <tr key={s.id} className={"stu-row" + (isPaid?" tui-row-paid":" tui-row-unpaid")}
+                        onClick={() => { setSelected(s); setPreview(true); }}>
+                      <td className="stu-td center stu-stt">{i+1}</td>
+                      <td className="stu-td">
+                        <div className="stu-name">{s.name}</div>
+                      </td>
+                      <td className="stu-td center stu-num">{s.sessions}</td>
+                      <td className="stu-td right stu-price">{fmt(s.pricePerSession)}</td>
+                      <td className="stu-td right stu-fee-main">{fmt(s.baseFee)}</td>
+                      <td className="stu-td center stu-num">{s.kemSessions > 0 ? s.kemSessions : <span className="stu-dash">—</span>}</td>
+                      <td className="stu-td right stu-price">{s.kemFee > 0 ? fmt(s.kemPrice) : <span className="stu-dash">—</span>}</td>
+                      <td className="stu-td right stu-fee-kem">{s.kemFee > 0 ? fmt(s.kemFee) : <span className="stu-dash">—</span>}</td>
+                      <td className="stu-td center" onClick={e=>e.stopPropagation()}>
+                        <button className={"tui-toggle" + (isPaid?" paid":"")} onClick={()=>togglePaid(s.id)}>
+                          <span className="tui-toggle-track"><span className="tui-toggle-thumb"/></span>
+                          <span className="tui-toggle-label">{isPaid?"Đã thu":"Chưa thu"}</span>
+                        </button>
+                      </td>
+                      <td className="stu-td center" onClick={e=>copyOneRow(e,s)}>
+                        <button className={"tui-copy-btn"+(cs==="loading"?" loading":"")+(cs==="copied"?" copied":"")}>
+                          {cs==="copied"
+                            ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            : cs==="loading"
+                            ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                            : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -388,28 +522,10 @@ function TuitionPage({ classes, user }) {
                     <button className="modal-close" onClick={() => setPreview(false)}>×</button>
                 </div>
                 {/* Scaled Preview */}
-                <div className="receipt-preview-container" ref={el => {
-                  if (!el) return;
-                  const scale = el.clientWidth / 1080;
-                  const wrapper = el.querySelector('.receipt-scale-wrapper');
-                  if (!wrapper) return;
-                  wrapper.style.transform = `scale(${scale})`;
-                  wrapper.style.transformOrigin = 'top left';
-                  wrapper.style.width = '1080px';
-                  requestAnimationFrame(() => {
-                    const receiptEl = wrapper.querySelector('.receipt');
-                    const h = receiptEl ? receiptEl.offsetHeight : 1920;
-                    // Set height wrapper = chiều cao thực sau scale để scroll đúng
-                    wrapper.style.height = Math.ceil(h * scale) + 'px';
-                  });
-                }}>
-                    <div className="receipt-scale-wrapper">
-                        <ReceiptMarkup 
-                            student={selected} bankInfo={bankInfo} qrCodeUrl={qrCodeUrl} profile={profile}
-                            context={{year: selYear, month: selMonth}}
-                        />
-                    </div>
-                </div>
+                <ReceiptScalePreview
+                  selected={selected} bankInfo={bankInfo} qrCodeUrl={qrCodeUrl}
+                  profile={profile} selYear={selYear} selMonth={selMonth}
+                />
                 <div className="modal-actions">
                     <button className="btn-dark" onClick={downloadReceipt}>⬇️ Tải ảnh</button>
                     <button className="btn-dark" onClick={async () => {
